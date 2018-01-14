@@ -1,7 +1,7 @@
 
 # define the python major version to use for distutils compilation.
 PYVER=2
-PY=python$(PYVER)
+PY?=python
 
 # define the software target and object filenames.
 TARGETS=
