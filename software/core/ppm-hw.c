@@ -360,6 +360,7 @@ int ppm_zg_fd (int fd, ppm_prog *pp, ppm_data *acq) {
     if (!ppm_data_alloc (acq, n_samples)) {
       /* output an error. */
       debugf ("failed to allocate acquisition structure");
+      free(bytes);
       return 0;
     }
   }
@@ -372,6 +373,8 @@ int ppm_zg_fd (int fd, ppm_prog *pp, ppm_data *acq) {
   if (write (fd, buf, 1) != 1) {
     /* output an error. */
     debugf ("failed to send command '%02x'", buf[0]);
+    if(bytes)
+      free(bytes);
     return 0;
   }
 
@@ -391,6 +394,8 @@ int ppm_zg_fd (int fd, ppm_prog *pp, ppm_data *acq) {
   if (n != 1 || buf[0] != PPM_MSG_DEVICE_DONE) {
     /* output an error. */
     debugf ("failed to run pulse program (%02x)", buf[0]);
+    if(bytes)
+      free(bytes);
     return 0;
   }
 
@@ -406,11 +411,11 @@ int ppm_zg_fd (int fd, ppm_prog *pp, ppm_data *acq) {
 
     /* build the time values in the acquisition structure. */
     ppm_prog_timings (pp, acq);
-
-    /* free the temporary array. */
-    free (bytes);
-    bytes = NULL;
   }
+
+  /* free the temporary array. */
+  if(bytes)
+    free(bytes);
 
   /* return success. */
   return 1;

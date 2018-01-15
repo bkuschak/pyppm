@@ -694,6 +694,10 @@ pyppm_pack_data (ppm_data *dat) {
   /* build a tuple of the time and amplitude tuples. */
   obj = PyTuple_Pack (2, x, v);
 
+  /* release the individual tuples now that they are referenced by the packed tuple */
+  Py_DECREF (x);
+  Py_DECREF (v);
+
   /* return the packed tuple of tuples. */
   return obj;
 }
@@ -743,6 +747,11 @@ pyppm_pack_fall (ppm_fall *dat) {
 
   /* build a tuple of the time, frequency and amplitude tuples. */
   obj = PyTuple_Pack (3, tobj, fobj, vobj);
+
+  /* release the individual tuples now that they are referenced by the packed tuple */
+  Py_DECREF (tobj);
+  Py_DECREF (fobj);
+  Py_DECREF (vobj);
 
   /* return the packed tuple of tuples. */
   return obj;
@@ -950,6 +959,10 @@ PyPPM_new (PyTypeObject *type, PyObject *args, PyObject *keywords) {
 
     /* initialize the freshness of the pulprog info. */
     self->fresh = 0;
+
+    /* initialize the pulse program buffer */
+    self->pp.n = 0;
+    self->pp.bytes = NULL;
   }
 
   /* return the newly allocated object pointer. */
@@ -985,6 +998,8 @@ static void
 PyPPM_dealloc (PyPPM *self) {
   /* free the memory allocated for the core structures. */
   /* for now, nothing to free. */
+  /* except, possibly the pulse program */
+  ppm_prog_empty(&self->pp);
 
   /* release memory allocated for the object. */
   Py_TYPE (self)->tp_free ((PyObject *) self);

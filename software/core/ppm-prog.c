@@ -56,6 +56,11 @@ static const ppm_cmd cmds[] = {
 /* ppm_prog_alloc: allocates a pulse program array.
  */
 int ppm_prog_alloc (ppm_prog *pp, unsigned int n) {
+
+  /* if already allocated, free it first to avoid leak */
+  if (pp->n > 0 && pp->bytes != NULL) 
+    ppm_prog_empty(pp);
+
   /* set the value count. */
   pp->n = n;
 
