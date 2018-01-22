@@ -45,6 +45,9 @@ class ppm_analysis:
 		self.verbose = verbose
 		self.interactive = True
 		self.intermag_recent = []
+		self.intermag_name = None
+		self.geometrics_recent = []
+		self.geometrics_name = None
 
 	def set_local_offset(self, offset):
 		self.local_offset = offset
@@ -92,6 +95,7 @@ class ppm_analysis:
 			# Filter out comments and invalid data
 			for line in open(f, 'r'):
 				if '99999.00' not in line:
+					# UTC time
 					# DATE       TIME         DOY     H      D      Z      F
 					data = [i for i in line.split()]
 					ts = data[0] + ' ' + data[1]
@@ -100,6 +104,32 @@ class ppm_analysis:
 						field = float(data[6])
 						self.intermag_recent.append((ts, field))
 					except ValueError:
+						if self.verbose > 1:
+							print 'rejecting line', line
+						continue
+
+	# Given a Geometrics data file, load it for plotting
+	def load_geometrics_data(self, path, name=None):
+		self.geometrics_recent = []
+		self.geometrics_name = name
+		
+		for f in glob.glob(path):
+			if self.verbose > 0:
+				print 'scanning geometrics data file', f
+			# Filter out comments and invalid data
+			for line in open(f, 'r'):
+				# Local time
+				# $ FIELD(nT),unknown 	DATE       TIME 
+					data = [i for i in line.split()]
+					try:
+						ts = data[2] + ' ' + data[3]
+						ts = dt.datetime.utcfromtimestamp(time.mktime(dt.datetime.strptime(ts, "%m/%d/%y %H:%M:%S.%f").timetuple()))
+						ts = mdates.date2num(ts)
+						#ts = mdates.date2num(dt.datetime.strptime(ts, "%m/%d/%y %H:%M:%S.%f"))
+						field_data = [i for i in data[1].split(',')]
+						field = float(field_data[0])
+						self.geometrics_recent.append((ts, field))
+					except:
 						if self.verbose > 1:
 							print 'rejecting line', line
 						continue
@@ -373,8 +403,9 @@ class ppm_analysis:
 		#ax.xaxis.set_major_locator(mdates.DayLocator()) 
 		#ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6)) 
 		ax.xaxis.set_major_formatter(timefmt)
-		plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM')	# offset corrected
 		plt.plot([x[0] for x in self.intermag_recent], [x[1] for x in self.intermag_recent], '-', color='red', label=self.intermag_name)
+		plt.plot([x[0] for x in self.geometrics_recent], [x[1] for x in self.geometrics_recent], '-', color='orange', label=self.geometrics_name)
+		plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM')	# offset corrected
 		plt.ylabel('Fscalar (nT)')
 		plt.grid()
 		plt.legend(loc='upper left')
@@ -437,6 +468,8 @@ to the output log file, if it hasn't already been done.
   -a, --audio                Play the audio file after each analysis
   -t, --time=SECONDS         Only process newer files. (The unix epoch timestamp if >0, else number of seconds into the past.)
   -i, --intermagnet=PATH     Path to Intermagnet data files (such as /directory/*.min)
+  -g, --geometrics=PATH      Path to Geometrics data files (such as /directory/*.dat)
+  -O, --offset=FLOAT         Set our local magnetic offset in nanoTesla
 ''' % (s)
 	sys.exit(1)
 
@@ -451,13 +484,15 @@ def main():
 	wavfname = None
 	earliest_filetime = 0
 	intermagnet_path = None 
+	geometrics_path = None 
+	local_offset = -369.0
 
 	# Parse command line options
 	try:
 		opts,args = getopt.getopt (sys.argv[1:],
-				'f:o:vpw:at:i:h',
+				'f:o:vpw:at:i:g:hO:',
 				['filename=', 'output=', 'verbose', 'plot', 'wavfile=', 'audio', 'time=',
-				 'intermagnet=', 'help'])
+				 'intermagnet=', 'geometrics=', 'offset=', 'help'])
 	except getopt.GetoptError:
 		usage (sys.argv[0])
 		sys.exit (1)
@@ -487,6 +522,10 @@ def main():
 			play_audio = True
 		elif o in ('-i', '--intermagnet'):
 			intermagnet_path = a
+		elif o in ('-g', '--geometrics'):
+			geometrics_path = a
+		elif o in ('-O', '--offset'):
+			local_offset = float(a)
 
 	# Process all pending data:
 	# Read previously recorded and timestamped files
@@ -511,13 +550,16 @@ def main():
 
 		if Skip == False:
 			ppm = ppm_analysis(output_fname, verbose)
-			ppm.set_local_offset(-369.0)
+			ppm.set_local_offset(local_offset)
 			ppm.load_data_file(f, freq_error=+60e-6)
 			ppm.set_expected_range(47000, 49000)
 
 			# FIXME - wasteful to load each time...
 			if intermagnet_path:
 				ppm.load_intermagnet_data(intermagnet_path, 'Intermagnet')
+
+			if geometrics_path:
+				ppm.load_geometrics_data(geometrics_path, 'Geometrics')
 
 			# try to identify the FID signal
 			field, fdm, fom_nt, fdm_snr = ppm.analyze(plot=plot, wavfilename=wavfname)
