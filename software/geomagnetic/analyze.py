@@ -146,7 +146,8 @@ class ppm_analysis:
 		self.fdm_time_constant = 1.0 / self.fdm.decay
 		self.field = self.freq_to_field(self.fdm.frequency)
 
-		# Like GellarLabs, compute an SNR which is 20 log (FID amplitude / RMS_Sum(other inband amplitudes))
+		# See http://www.gellerlabs.com/PMAG%20Docs.htm
+		# Like GellerLabs, compute an SNR which is 20 log (FID amplitude / RMS_Sum(other inband amplitudes))
 		# This doesn't appear to be very meaningful, based on the way FDM works.  We should compute this differently.
 		rms_sum = 0
 		for s in self.signals:				
@@ -156,7 +157,7 @@ class ppm_analysis:
 				rms_sum += (s.amplitude ** 2)
 		self.fdm_snr = 20.0 * np.log10(self.fdm.amplitude / np.sqrt(rms_sum))
 
-		# GellarLabs calls the FDM error the Figure of Merit. 
+		# GellerLabs calls the FDM error the Figure of Merit. 
 		# Shouldn't be converted to nT, as harminv says 'error is not really error bars on frequency'
 		self.fom_nt = self.freq_to_field(self.fdm.error * self.fdm.frequency)
 		if self.verbose > 0:
