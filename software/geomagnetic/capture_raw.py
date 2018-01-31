@@ -94,10 +94,10 @@ usage: python %s [OPTION]...
 Run the pulse program periodically, logging collected data to files.
 
   -o, --output=FILENAME      base filename, appended with timestamp
-  -f, --fs=KHZ               sampling frequency in kHz (FIXME resolution?)
+  -f, --fs=KHZ               sampling frequency in kHz (default 20 KHz. FIXME resolution?)
   -e, --freqerror=FLOAT      sampling frequency error multiplier (-10e-6 for clock running 10ppm slow, default 0)
-  -l, --length=SAMPLES       number of samples for each acquisition (default 16384)
-  -p, --polarization=SEC     polarization time (default 2)
+  -l, --length=SAMPLES       number of samples for each acquisition (default 32768)
+  -p, --polarization=SEC     polarization time (default 4)
   -d, --delay=SEC            delay a number of seconds between collections (default 8)
   -c, --comment=STRING       comment to include in the data file
   -P, --protocol=0,1,2       Python pickle protocol (default 2)
@@ -107,9 +107,9 @@ Run the pulse program periodically, logging collected data to files.
 def main():
 	# defaults
 	sample_rate_khz = 20
+	data_length = 32768		# each acquisition
+	polarization_time = 4
 	freq_error = 0.0
-	data_length = 16384		# each acquisition
-	polarization_time = 2		
 	delay = 8
 	output_fname = 'data/ppm_measurements.dat'
 	protocol = 2			# pickle protocol
