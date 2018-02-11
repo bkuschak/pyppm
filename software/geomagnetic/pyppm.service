@@ -1,0 +1,14 @@
+[Unit]
+Description=PyPPM data acqusition and logging daemon
+Documentation=http://www.github.com/bkuschak/pyppm
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/nice -n -5 /usr/bin/python /usr/local/bin/pyppm_capture_raw.py -p4 -l32768 -P2 -q 
+StandardOutput=null
+StandardError=null
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
