@@ -35,7 +35,10 @@ Currently there is analysis.py, that performs a basic analysis of the data using
 Shown below is a plot of 24 hours of data (blue dots) compared against Intermagnet data from a professional station 150 miles away. 
 The data is offset by a fixed amount to align with the Intermagnet data. At nighttime, the data is quite a good match, as seen near 
 the middle of the bottom plot. During the day, the data is much noisier. This may be due to passing traffic and electricity usage 
-in the neighborhood.
+in the neighborhood. The FFT spectrum plot shows the FID peak prominently. Notice how it is not present in the background measurement. 
+Also visible are smaller peaks that are harmonics of the 60 Hz power grid, specifically the 32nd through 36th harmonics. They are offset slightly
+from the expected position, presumably due to crystal tolerance and the fact that the nominal 60 Hz frequency is actually steered slightly by the
+grid operators in response to changes in load.
 
 <p align="center"><img src="ppm_plot.png" alt="ppm_plot" width="800"/></p>
 
