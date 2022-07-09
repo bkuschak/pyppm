@@ -30,6 +30,21 @@ Analysis scripts require a few prerequisites be installed: numpy, scipy, matplot
 
 Currently there is analysis.py, that performs a basic analysis of the data using FDM and generates some plots, such as [ppm_plot.png.](./ppm_plot.png)  While the analysis seems to work during times of quiet background, when there is high background noise, it has trouble picking the right frequency that corresponds to the FID decay.  Much work is still to be done.
 
+### Results
+
+Shown below is a plot of 24 hours of data (blue dots) compared against Intermagnet data from a professional station 150 miles away. 
+The data is offset by a fixed amount to align with the Intermagnet data. At nighttime, the data is quite a good match, as seen near 
+the middle of the bottom plot. During the day, the data is much noisier. This may be due to passing traffic and electricity usage 
+in the neighborhood.
+
+<p align="center"><img src="ppm_plot.png" alt="ppm_plot" width="800"/></p>
+
+Below is a zoomed-in plot of nighttime data. At some points the noise floor drops to around 200 pT(pp). There are some outliers,  
+a result of the FDM algorithm failing to converge. Additional filtering is needed to eliminate these spurious points.
+Note: there's an error in the time axis label on this plot, which should be 8 hours ahead or listed as PST rather than UTC.
+
+<p align="center"><img src="ppm_plot.night.png" alt="ppm_plot.night" width="800"/></p>
+
 ### Hardware Notes
 
 This was initially tested with a [slightly modified version](../../designs/ppm-1.3/v1_redlined.pdf) of the PyPPM-1.3 hardware, and a coil very similar to the coil-2.0.  
