@@ -28,12 +28,16 @@ The analysis script(s) run the solver and compute the FID parameters and the Ear
 
 Analysis scripts require a few prerequisites be installed: python-numpy, python-scipy, python-matplotlib, python-tz, harminv, and pharminv
 
-  sudo apt-get update
-  sudo apt-get install python-numpy python-scipy python-matplotlib python-tz
+```
+sudo apt-get update
+sudo apt-get install python-numpy python-scipy python-matplotlib python-tz
+```
 
 Debian Jesse has harminv available as a package:
 
-  sudo apt-get install libharminv-dev
+```
+sudo apt-get install libharminv-dev
+```
 
   If you are using another distro, you can build harminv from source:
 
@@ -46,9 +50,11 @@ Debian Jesse has harminv available as a package:
 
 Build pharminv from scratch:
 
-  git clone https://github.com/aaren/pharminv.git
-  cd pharminv
-  sudo pip install pharminv
+```
+git clone https://github.com/aaren/pharminv.git
+cd pharminv
+sudo pip install pharminv
+```
 
 Currently there is analysis.py, that performs a basic analysis of the data using FDM and generates some plots, such as [ppm_plot.png.](./ppm_plot.png)  While the analysis seems to work during times of quiet background, when there is high background noise, it has trouble picking the right frequency that corresponds to the FID decay.  Much work is still to be done.
 
