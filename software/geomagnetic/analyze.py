@@ -21,12 +21,162 @@ import getopt
 import datetime as dt
 import scipy.io.wavfile
 import numpy as np
+
+# Allow MPL to work with no display attached.
+import matplotlib
+matplotlib.use('Agg') # set the backend before importing pyplot
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.dates as mdates
 from matplotlib.font_manager import FontProperties
 from scipy import signal
+
+
+# Import iirpeak from a recent scipy, since these are not present in scipy-0.14
+def iirpeak(w0, Q, fs=2.0):
+    """
+    Design second-order IIR peak (resonant) digital filter.
+    A peak filter is a band-pass filter with a narrow bandwidth
+    (high quality factor). It rejects components outside a narrow
+    frequency band.
+    Parameters
+    ----------
+    w0 : float
+        Frequency to be retained in a signal. If `fs` is specified, this is in
+        the same units as `fs`. By default, it is a normalized scalar that must
+        satisfy  ``0 < w0 < 1``, with ``w0 = 1`` corresponding to half of the
+        sampling frequency.
+    Q : float
+        Quality factor. Dimensionless parameter that characterizes
+        peak filter -3 dB bandwidth ``bw`` relative to its center
+        frequency, ``Q = w0/bw``.
+    fs : float, optional
+        The sampling frequency of the digital system.
+        .. versionadded:: 1.2.0
+    Returns
+    -------
+    b, a : ndarray, ndarray
+        Numerator (``b``) and denominator (``a``) polynomials
+        of the IIR filter.
+    See Also
+    --------
+    iirnotch
+    Notes
+    -----
+    .. versionadded:: 0.19.0
+    References
+    ----------
+    .. [1] Sophocles J. Orfanidis, "Introduction To Signal Processing",
+           Prentice-Hall, 1996
+    Examples
+    --------
+    Design and plot filter to remove the frequencies other than the 300 Hz
+    component from a signal sampled at 1000 Hz, using a quality factor Q = 30
+    >>> from scipy import signal
+    >>> import matplotlib.pyplot as plt
+    >>> fs = 1000.0  # Sample frequency (Hz)
+    >>> f0 = 300.0  # Frequency to be retained (Hz)
+    >>> Q = 30.0  # Quality factor
+    >>> # Design peak filter
+    >>> b, a = signal.iirpeak(f0, Q, fs)
+    >>> # Frequency response
+    >>> freq, h = signal.freqz(b, a, fs=fs)
+    >>> # Plot
+    >>> fig, ax = plt.subplots(2, 1, figsize=(8, 6))
+    >>> ax[0].plot(freq, 20*np.log10(np.maximum(abs(h), 1e-5)), color='blue')
+    >>> ax[0].set_title("Frequency Response")
+    >>> ax[0].set_ylabel("Amplitude (dB)", color='blue')
+    >>> ax[0].set_xlim([0, 500])
+    >>> ax[0].set_ylim([-50, 10])
+    >>> ax[0].grid(True)
+    >>> ax[1].plot(freq, np.unwrap(np.angle(h))*180/np.pi, color='green')
+    >>> ax[1].set_ylabel("Angle (degrees)", color='green')
+    >>> ax[1].set_xlabel("Frequency (Hz)")
+    >>> ax[1].set_xlim([0, 500])
+    >>> ax[1].set_yticks([-90, -60, -30, 0, 30, 60, 90])
+    >>> ax[1].set_ylim([-90, 90])
+    >>> ax[1].grid(True)
+    >>> plt.show()
+    """
+
+    return _design_notch_peak_filter(w0, Q, "peak", fs)
+
+
+def _design_notch_peak_filter(w0, Q, ftype, fs=2.0):
+    """
+    Design notch or peak digital filter.
+    Parameters
+    ----------
+    w0 : float
+        Normalized frequency to remove from a signal. If `fs` is specified,
+        this is in the same units as `fs`. By default, it is a normalized
+        scalar that must satisfy  ``0 < w0 < 1``, with ``w0 = 1``
+        corresponding to half of the sampling frequency.
+    Q : float
+        Quality factor. Dimensionless parameter that characterizes
+        notch filter -3 dB bandwidth ``bw`` relative to its center
+        frequency, ``Q = w0/bw``.
+    ftype : str
+        The type of IIR filter to design:
+            - notch filter : ``notch``
+            - peak filter  : ``peak``
+    fs : float, optional
+        The sampling frequency of the digital system.
+        .. versionadded:: 1.2.0:
+    Returns
+    -------
+    b, a : ndarray, ndarray
+        Numerator (``b``) and denominator (``a``) polynomials
+        of the IIR filter.
+    """
+
+    # Guarantee that the inputs are floats
+    w0 = float(w0)
+    Q = float(Q)
+    w0 = 2*w0/fs
+
+    # Checks if w0 is within the range
+    if w0 > 1.0 or w0 < 0.0:
+        raise ValueError("w0 should be such that 0 < w0 < 1")
+
+    # Get bandwidth
+    bw = w0/Q
+
+    # Normalize inputs
+    bw = bw*np.pi
+    w0 = w0*np.pi
+
+    # Compute -3dB attenuation
+    gb = 1/np.sqrt(2)
+
+    if ftype == "notch":
+        # Compute beta: formula 11.3.4 (p.575) from reference [1]
+        beta = (np.sqrt(1.0-gb**2.0)/gb)*np.tan(bw/2.0)
+    elif ftype == "peak":
+        # Compute beta: formula 11.3.19 (p.579) from reference [1]
+        beta = (gb/np.sqrt(1.0-gb**2.0))*np.tan(bw/2.0)
+    else:
+        raise ValueError("Unknown ftype.")
+
+    # Compute gain: formula 11.3.6 (p.575) from reference [1]
+    gain = 1.0/(1.0+beta)
+
+    # Compute numerator b and denominator a
+    # formulas 11.3.7 (p.575) and 11.3.21 (p.579)
+    # from reference [1]
+    if ftype == "notch":
+        b = gain*np.array([1.0, -2.0*np.cos(w0), 1.0])
+    else:
+        b = (1.0-gain)*np.array([1.0, 0.0, -1.0])
+    a = np.array([1.0, -2.0*gain*np.cos(w0), (2.0*gain-1.0)])
+
+    return b, a
+
+
+
+
 
 class ppm_analysis:
 	#gp = 42.57747892		# gyromagnetic ratio of proton
@@ -43,7 +193,8 @@ class ppm_analysis:
 		self.best_candidate = None
 		self.log_fname = log_fname
 		self.verbose = verbose
-		self.interactive = True
+		#self.interactive = True
+		self.interactive = False
 		self.intermag_recent = []
 		self.intermag_name = None
 		self.geometrics_recent = []
@@ -60,6 +211,9 @@ class ppm_analysis:
 	# (t0,a0) is the background. (t1,a1) is the real measurement.
 	# If freq_error=None, then error value is taken from the data file 
 	def load_data_file(self, fname, freq_error=None):
+		if self.verbose > 0:
+			print 'Loading file:', fname
+
 		file_data = pickle.load(open(fname, 'rb'))
 		self.a0 = file_data['a0']				# background
 		self.a1 = file_data['a1']				# FID measurement
@@ -152,12 +306,18 @@ class ppm_analysis:
 
 	# Analyze the data by running the FDM
 	def analyze(self, plot=False, wavfilename=None):
+		if self.verbose > 0:
+			print 'Analyzing...'
 		# narrowband filter the data around the expected peak.  
 		fnaught = self.field_to_freq(self.expected_field)
 		Q = 60.0
 		w0 = fnaught/(self.fs/2)	# normalized
-		b, a = signal.iirpeak(w0, Q)
-		self.a1f = signal.filtfilt(b, a, self.a1) 
+
+		#b, a = signal.iirpeak(w0, Q) 	# FIXME - not available in scipy-0.14
+		#self.a1f = np.array(self.a1)
+
+		b, a = iirpeak(w0, Q) 		# use local - not available in scipy-0.14
+		self.a1f = signal.filtfilt(b, a, self.a1) 	
 
 		# FIXME - we should truncate the beginning and end that are subject to filter startup, so they don't throw off
 		# the harmonic inversion decay calculation
@@ -167,6 +327,7 @@ class ppm_analysis:
 
 		# Use FDM harmonic inversion to calculate a set of frequencies in this band
 		self.signals = harminv.invert(self.a1f, fmin=1000, fmax=3000, dt=1.0/self.fs)
+		#self.signals = harminv.invert(self.a1f, fmin=2000, fmax=2500, dt=1.0/self.fs)
 
 		# Select best candidate signal, or None if we couldn't find one
 		self.fdm = self.select_candidate(self.signals)
@@ -217,11 +378,14 @@ class ppm_analysis:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad freq ", s
-			elif s.decay < 0.05 or s.decay > 3.0:
+			#elif s.decay < 0.05 or s.decay > 3.0:
+			#elif s.decay < 0.05 or s.decay > 4.0:
+			elif s.decay < 0.05 or s.decay > 6.0:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad decay", s
-			elif abs(s.Q) < 2000.0:
+			#elif abs(s.Q) < 2000.0:
+			elif abs(s.Q) < 1500.0:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad q    ", s
@@ -229,7 +393,8 @@ class ppm_analysis:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad error", s
-			elif s.amplitude < 0.02 or s.amplitude > 0.500:
+			#elif s.amplitude < 0.02 or s.amplitude > 0.500:
+			elif s.amplitude < 0.005 or s.amplitude > 0.500:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad amplitude", s
@@ -422,7 +587,8 @@ class ppm_analysis:
 		# show and save
 		if self.interactive:
 			plt.show()
-		fig.set_size_inches(w=11,h=8.5)
+		#fig.set_size_inches(w=11,h=8.5)
+		fig.set_size_inches(11,8.5)
 		fig.tight_layout(rect=[0, 0.03, 1, 0.95])		# leave some space for suptitle
 		fig.savefig('ppm_plot.png', bbox_inches='tight')	# FIXME should we add timestamp to filename and create a link to latest?
 
@@ -527,7 +693,11 @@ def main():
 		elif o in ('-O', '--offset'):
 			local_offset = float(a)
 
+
 	# Process all pending data:
+	if verbose > 0:
+		print 'Preparing file list'
+
 	# Read previously recorded and timestamped files
 	for f in glob.glob(input_fname + '.*'):
 
@@ -551,8 +721,15 @@ def main():
 		if Skip == False:
 			ppm = ppm_analysis(output_fname, verbose)
 			ppm.set_local_offset(local_offset)
-			ppm.load_data_file(f, freq_error=+60e-6)
-			ppm.set_expected_range(47000, 49000)
+			try:
+				ppm.load_data_file(f, freq_error=+60e-6)
+			except:
+				print "Failed loading file", f
+				continue
+
+			#ppm.set_expected_range(47000, 49000)
+			#ppm.set_expected_range(50000, 52700)
+			ppm.set_expected_range(51100, 51700)
 
 			# FIXME - wasteful to load each time...
 			if intermagnet_path:

@@ -5,7 +5,7 @@ Documentation=http://www.github.com/bkuschak/pyppm
 [Service]
 Type=simple
 ExecStartPre=/usr/local/bin/override_usb_power.sh
-ExecStart=/usr/bin/nice -n -5 /usr/bin/python /usr/local/bin/pyppm_capture_raw.py -p4 -l32768 -P2 -q 
+ExecStart=/usr/bin/nice -n -5 /usr/bin/python /usr/local/bin/pyppm_capture_raw.py -p5 -d10 -l32768 -P2 -q
 StandardOutput=null
 StandardError=null
 Restart=always
