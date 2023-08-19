@@ -23,6 +23,9 @@
 /* include the PPM header. */
 #include "ppm.h"
 
+/* timeout to detect if the device read hangs. */
+#define READ_TIMEOUT_MSEC 30000
+
 /* ppm_device_open: opens the PPM device file. */
 int ppm_device_open (const char *fname) {
   /* declare required variables. */
@@ -132,6 +135,50 @@ int ppm_rst (const char *fname) {
   return 1;
 }
 
+/* read_timeout: read with timeout, because sometimes read() 
+ * hangs indefinitely. returns number of bytes read, or
+ * <0 for error / timeout. timeout_msec = 0 means to wait 
+ * forever. */
+int read_timeout(int fd, void *buf, size_t nbytes, int timeout_msec) {
+  /* declare required variables. */
+  fd_set rfd;
+  struct timeval tv;
+  int ret;
+
+  if(timeout_msec < 0)
+    return -EINVAL;
+  else if(timeout_msec == 0)
+    return read (fd, buf, nbytes);
+
+  /* use select to implement timeout */
+  FD_ZERO(&rfd);
+  FD_SET(fd, &rfd);
+
+  tv.tv_sec = timeout_msec / 1000;
+  tv.tv_usec = (timeout_msec % 1000) * 1000;
+
+  /* select retursn the number of fds ready to read, or -1 on error */
+  ret = select (fd + 1, &rfd, NULL, NULL, &tv);
+  if (ret == 0) {
+    /* timeout */
+    debugf ("read timeout after %d msec", timeout_msec);
+    return -ETIMEDOUT;
+  }
+  else if (ret < 0) {
+    /* error */
+    return ret;
+  }
+  else if (FD_ISSET (fd, &rfd)) {
+    /* ready to read */
+    return read(fd, buf, nbytes);
+  }
+  else {
+    /* should never happen */
+    debugf ("select returned unexpected value %d", ret);
+    return 0;
+  }
+}
+
 /* ppm_ver_fd: reads version values from the device. */
 int ppm_ver_fd (int fd, int *ver, int *rev) {
   /* declare required variables. */
@@ -153,7 +200,7 @@ int ppm_ver_fd (int fd, int *ver, int *rev) {
   }
 
   /* read back the device response. */
-  n = read (fd, buf, PPM_VERMSG_BYTES);
+  n = read_timeout (fd, buf, PPM_VERMSG_BYTES, READ_TIMEOUT_MSEC);
 
   /* see if the number of expected bytes was read. */
   if (n != PPM_VERMSG_BYTES) {
@@ -201,13 +248,17 @@ unsigned int ppm_szpp_fd (int fd) {
   }
 
   /* read back the device response. */
-  n = read (fd, buf, PPM_SIZMSG_BYTES);
+  n = read_timeout (fd, buf, PPM_SIZMSG_BYTES, READ_TIMEOUT_MSEC);
 
   /* check the size. */
   if (n != 4) {
     /* output an error. */
-    debugf ("failed to read size (%d != %d)",
-            n, PPM_SIZMSG_BYTES);
+    if (n == -ETIMEDOUT)
+      debugf ("failed to read size (%d != %d). timeout.",
+              n, PPM_SIZMSG_BYTES);
+    else
+      debugf ("failed to read size (%d != %d)",
+              n, PPM_SIZMSG_BYTES);
 
     /* return failure. */
     return 0;
@@ -246,12 +297,15 @@ int ppm_wpp_fd (int fd, ppm_prog *pp) {
   }
 
   /* read back the device response. */
-  n = read (fd, buf, 1);
+  n = read_timeout (fd, buf, 1, READ_TIMEOUT_MSEC);
 
   /* check the last byte. */
   if (n != 1 || buf[0] != PPM_MSG_DEVICE_DONE) {
     /* output an error message and return failure. */
-    debugf ("invalid buffer end '%02x'", buf[0]);
+    if (n == -ETIMEDOUT)
+      debugf ("invalid buffer end '%02x'. timeout.", buf[0]);
+    else
+      debugf ("invalid buffer end '%02x'", buf[0]);
     return 0;
   }
 
@@ -299,7 +353,16 @@ int ppm_rpp_fd (int fd, ppm_prog *pp) {
   /* attempt to read in the expected number of bytes. */
   for (n_read = 0; n_read < n_bytes + 2;) {
     /* read the next chunk of available bytes. */
-    n = read (fd, buf + n_read, n_bytes + 2 - n_read);
+    n = read_timeout (fd, buf + n_read, n_bytes + 2 - n_read, READ_TIMEOUT_MSEC);
+
+    /* check for timeout or other error */
+    if(n < 0) {
+      if(n == -ETIMEDOUT)
+        debugf ("failed to read pulse program bytes. timeout.");
+      else
+        debugf ("failed to read pulse program bytes. err = %d", n);
+      return 0;
+    }
 
     /* accumulate the number of bytes read. */
     n_read += n;
@@ -381,19 +444,33 @@ int ppm_zg_fd (int fd, ppm_prog *pp, ppm_data *acq) {
   /* attempt to read in the expected number of bytes. */
   for (n_read = 0; n_read < n_bytes;) {
     /* read the next chunk of available bytes. */
-    n = read (fd, bytes + n_read, n_bytes - n_read);
+    n = read_timeout (fd, bytes + n_read, n_bytes - n_read, READ_TIMEOUT_MSEC);
+
+    /* check for timeout or other error */
+    if(n < 0) {
+      if(n == -ETIMEDOUT)
+        debugf ("failed to read data bytes. timeout.");
+      else
+        debugf ("failed to read data bytes. err = %d", n);
+      if(bytes)
+        free(bytes);
+      return 0;
+    }
 
     /* accumulate the number of bytes read. */
     n_read += n;
   }
 
   /* read the last byte from the device. */
-  n = read (fd, buf, 1);
+  n = read_timeout (fd, buf, 1, READ_TIMEOUT_MSEC);
 
   /* check that it was a success byte. */
   if (n != 1 || buf[0] != PPM_MSG_DEVICE_DONE) {
     /* output an error. */
-    debugf ("failed to run pulse program (%02x)", buf[0]);
+    if(n == -ETIMEDOUT)
+      debugf ("failed to run pulse program (%02x). timeout.", buf[0]);
+    else
+      debugf ("failed to run pulse program (%02x)", buf[0]);
     if(bytes)
       free(bytes);
     return 0;

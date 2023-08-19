@@ -22,6 +22,7 @@
 
 /* include libc and linux headers. */
 #include <stdio.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
@@ -32,6 +33,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <math.h>
+#include <errno.h>
 
 /* include sndfile headers. */
 #ifdef HAVE_SNDFILE
