@@ -305,12 +305,12 @@ class ppm_analysis:
 		self.expected_freq = self.field_to_freq(self.expected_field)
 
 	# Analyze the data by running the FDM
-	def analyze(self, plot=False, wavfilename=None):
+	def analyze(self, plot_fname=None, wavfilename=None):
 		if self.verbose > 0:
 			print 'Analyzing...'
 		# narrowband filter the data around the expected peak.  
 		fnaught = self.field_to_freq(self.expected_field)
-		Q = 60.0
+		Q = 40.0
 		w0 = fnaught/(self.fs/2)	# normalized
 
 		#b, a = signal.iirpeak(w0, Q) 	# FIXME - not available in scipy-0.14
@@ -326,8 +326,8 @@ class ppm_analysis:
 			self.save_wavfile(wavfilename)
 
 		# Use FDM harmonic inversion to calculate a set of frequencies in this band
+		#self.signals = harminv.invert(self.a1f, fmin=1000, fmax=3000, dt=1.0/self.fs, nf=50)
 		self.signals = harminv.invert(self.a1f, fmin=1000, fmax=3000, dt=1.0/self.fs)
-		#self.signals = harminv.invert(self.a1f, fmin=2000, fmax=2500, dt=1.0/self.fs)
 
 		# Select best candidate signal, or None if we couldn't find one
 		self.fdm = self.select_candidate(self.signals)
@@ -368,6 +368,7 @@ class ppm_analysis:
 	def select_candidate(self, signals):
 
 		# mode frequencies, absolute amplitudes, phase shift, decay rates (reciprocal of time constant), Q factor, error
+		# TODO - print 1/decay instead of decay. This is tau.
 		if self.verbose > 0:
 			print 'freq, amplitude, phase, decay, q, error'
 			print signals
@@ -397,7 +398,7 @@ class ppm_analysis:
 				if self.verbose > 1:
 					print "discarding bad error", s
 			#elif s.amplitude < 0.02 or s.amplitude > 0.500:
-			elif s.amplitude < 0.005 or s.amplitude > 0.500:
+			elif s.amplitude < 0.005 or s.amplitude > 0.800:
 				signals = np.delete(signals, idx)
 				if self.verbose > 1:
 					print "discarding bad amplitude", s
@@ -549,8 +550,8 @@ class ppm_analysis:
 		plt.plot(np.array(f0), np.array(A0), 'b', label='background')
 		plt.plot(np.array(f1), np.array(A1), 'r', label='measurement')
 		plt.plot(np.array(f1f), np.array(A1f), 'g', label='post-filtered')
-		plt.axvline(x=self.expected_freq_low, color='red', linestyle='--', linewidth=2, label='expected signal range')
-		plt.axvline(x=self.expected_freq_high, color='red', linestyle='--', linewidth=2)
+		plt.axvspan(self.expected_freq_low-100, self.expected_freq_low, alpha=0.2, color='grey')
+		plt.axvspan(self.expected_freq_high, self.expected_freq_high+100, alpha=0.2, color='grey')
 		plt.axvline(x=self.fdm.frequency, color='red', linestyle=':', linewidth=3, label='detected signal', alpha=0.5)
 		label = '60 Hz harmonic'
 		for harmonic in powerline:
@@ -567,13 +568,15 @@ class ppm_analysis:
 		# Recent field strength plot
 		#ax = plt.subplot(gs[4:7, :])		# next rows, all columns
 		ax = plt.subplot(gs[4:8, :])		# next rows, all columns
-		timefmt = mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S\n%Z')	
+		#timefmt = mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S\n%Z')	
+		timefmt = mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S\n')		# workaround TZ issue
 		#ax.xaxis.set_major_locator(mdates.DayLocator()) 
 		#ax.xaxis.set_minor_locator(mdates.HourLocator(interval=6)) 
 		ax.xaxis.set_major_formatter(timefmt)
 		plt.plot([x[0] for x in self.intermag_recent], [x[1] for x in self.intermag_recent], '-', color='red', label=self.intermag_name)
 		plt.plot([x[0] for x in self.geometrics_recent], [x[1] for x in self.geometrics_recent], '-', color='orange', label=self.geometrics_name)
-		plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM')	# offset corrected
+		plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM', color='purple')	# offset corrected
+		plt.ylim(self.expected_field_low+950, self.expected_field_high-900)
 		plt.ylabel('Fscalar (nT)')
 		plt.grid()
 		plt.legend(loc='upper left')
@@ -737,7 +740,9 @@ def main():
 
 			#ppm.set_expected_range(47000, 49000)
 			#ppm.set_expected_range(50000, 52700)
-			ppm.set_expected_range(51100, 51700)
+			#ppm.set_expected_range(51100, 51700)
+			#ppm.set_expected_range(50000, 52600)
+			ppm.set_expected_range(51960-1000, 51960+1000)
 
 			# FIXME - wasteful to load each time...
 			if intermagnet_path:
