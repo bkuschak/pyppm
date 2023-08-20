@@ -2,10 +2,6 @@
 # Using the FDM method of harmonic inversion, calculate the FID precession
 # frequency, and field strength.
 # 
-# Status: works reasonably well for clean data, but in the presence of large
-# background noise it frequently selects the wrong signal as the FID signal.
-# The calculated SNR is pretty meaningless at this point.
-#
 # 1/13/18 B. Kuschak <bkuschak@yahoo.com> 
 #
 
@@ -21,6 +17,7 @@ import getopt
 import datetime as dt
 import scipy.io.wavfile
 import numpy as np
+import numpy.lib.recfunctions as rfn
 
 # Allow MPL to work with no display attached.
 import matplotlib
@@ -179,7 +176,6 @@ def _design_notch_peak_filter(w0, Q, ftype, fs=2.0):
 
 
 class ppm_analysis:
-    #gp = 42.57747892       # gyromagnetic ratio of proton
     gp = 42.576         # actual gyromagnetic ratio of proton in earth field
 
     def __init__(self, log_fname, verbose):
@@ -326,15 +322,18 @@ class ppm_analysis:
             self.save_wavfile(wavfilename)
 
         # Use FDM harmonic inversion to calculate a set of frequencies in this band.
-        #self.signals = harminv.invert(self.a1f, fmin=1000, fmax=3000, dt=1.0/self.fs, nf=50)
-        #self.signals = harminv.invert(self.a1f, fmin=1000, fmax=3000, dt=1.0/self.fs)
         self.signals = harminv.invert(self.a1f, fmin=self.expected_freq_low, fmax=self.expected_freq_high, dt=1.0/self.fs, nf=30)
 
-        # Compute FFTs of background, measurement, and filtered measurement data.
-        self.a1f = tuple(self.a1f)
+        # Next compute FFTs of background, measurement, and filtered measurement data.
+        # We will use this to help select the correct signal from the list of FDM candidates.
+        #self.a1f = tuple(self.a1f)
         (self.fft_f0, self.fft_a0) = pyppm.fft(self.t0, self.a0)
         (self.fft_f1, self.fft_a1) = pyppm.fft(self.t1, self.a1)
-        (self.fft_f1f, self.fft_a1f) = pyppm.fft(self.t1, self.a1f)
+        (self.fft_f1f, self.fft_a1f) = pyppm.fft(self.t1, tuple(self.a1f))
+
+        # For each of the candidate FDM signals, compute a narrowband SNR which is defined as the
+        # difference between the measurement and the background, at that frequency.
+        self.compute_narrowband_snrs()
 
         # Select best candidate signal, or None if we couldn't find one.
         self.fdm = self.select_candidate(self.signals)
@@ -344,49 +343,100 @@ class ppm_analysis:
         self.fdm_time_constant = 1.0 / self.fdm.decay
         self.field = self.freq_to_field(self.fdm.frequency)
 
-        # See http://www.gellerlabs.com/PMAG%20Docs.htm
-        # Like GellerLabs, compute an SNR which is 20 log (FID amplitude / RMS_Sum(other inband amplitudes))
-        # This doesn't appear to be very meaningful, based on the way FDM works.  We should compute this differently.
+        # Compute wideband SNR across the expected frequency band.
+        self.compute_wideband_snr()
+
+        # GellerLabs calls the FDM error the Figure of Merit. Lower is better.
+        # Shouldn't be converted to nT, as harminv says 'error is not really error bars on frequency'
+        self.fom = self.freq_to_field(self.fdm.error * self.fdm.frequency)
+        #if self.verbose > 1:
+            #print "FDM wideband SNR (dB)", self.wb_snr, "FOM", self.fdm.error
+
+        return self.field, self.fdm, self.fom, self.nb_snr, self.wb_snr
+
+#    # Given a real frequency, interpolate the FFT magnitude from the nearest points.
+#    def fft_magnitude(self, freqs, amplitudes, frequency):
+#        if frequency > freqs[-1]:
+#            print 'Frequency out of range. Clamping to max.'
+#            frequency = freqs[-1]
+#        if frequency < freqs[0]:
+#            print 'Frequency out of range. Clamping to min.'
+#            frequency = freqs[0]
+#
+#        # Find bounding indexes for this frequency.
+#        f_higher = np.argmax(freqs > frequency)
+#        f_lower = np.min(f_higher - 1, 0)
+#
+#        # Interpolate the magnitude.
+#        diff_amplitude = amplitudes[f_higher] - amplitudes[f_lower]
+#        fractional_f = (frequency - freqs[f_lower]) / (freqs[f_higher] - freqs[f_lower])
+#        interpolated_amplitude = amplitudes[f_lower] + fractional_f * diff_amplitude
+#        print 'Found frequency %.3f between indexes %d and %d (%.3f and %.3f). ' \
+#            'amplitudes %.3f and %.3f. Fractional freq: %.3f. Interpolated amplitude %.3f' \
+#            % (frequency, f_lower, f_higher, freqs[f_lower], freqs[f_higher], amplitudes[f_lower], amplitudes[f_higher], fractional_f, interpolated_amplitude)
+#        return interpolated_amplitude
+
+    # Given length 2 lists for x and y, and xp value somewhere between x[0] and x[1], return an interpolated value y at xp.
+    def interpolate(self, x, y, xp):
+            diff_y = y[1] - y[0]
+            diff_x = x[1] - x[0]
+            fractional_x = (xp - x[0]) / (x[1] - x[0])
+            return y[0] + fractional_x * diff_y
+
+    # For each of the FDM signals detected, compute a narrowband SNR, defined as the ratio between the measurement and the background.
+    def compute_narrowband_snrs(self):
+        # TODO Sort the FDM by frequency if not already done.
+
+        # Add new field to structured array. Default to zero SNR.
+        # FIXME - not working. use separate array for now
+        #self.signals = rfn.append_fields(self.signals, 'nb_snr', [0]*len(self.signals))
+        self.nb_snrs = []
+        for (i, f) in enumerate(self.signals):
+            self.nb_snrs.append(0)
+
+        # Iterate over the FDM signals by increasing frequency.
+        # This code assumes frequencies fft_f0 and fft_f1 are the same, which they are since both background and measurement are the same length and sample rate.
+        f_higher_idx = 0
+        for (i, s) in enumerate(self.signals):
+
+            # Find the fft frequency bucket just higher than this FDM frequency.
+            while f_higher_idx < len(self.fft_f0) and self.fft_f0[f_higher_idx] <= s.frequency:
+                f_higher_idx += 1
+
+            if f_higher_idx >= len(self.fft_f0):
+                # We have reached the end of the FFT. Cannot go any further.
+                break
+
+            # Interpolate the magnitude between FFT buckets.
+            f_lower_idx = np.min(f_higher_idx - 1, 0)
+            background_ampl = self.interpolate(self.fft_f0[f_lower_idx:f_higher_idx+1], self.fft_a0[f_lower_idx:f_higher_idx+1], s.frequency)
+            measurement_ampl = self.interpolate(self.fft_f1[f_lower_idx:f_higher_idx+1], self.fft_a1[f_lower_idx:f_higher_idx+1], s.frequency)
+
+            # Compute a narrowband SNR at this frequency.
+            nb_snr = 20 * np.log10(measurement_ampl / background_ampl)
+            self.nb_snrs[i] = nb_snr
+            #self.signals[i].nb_snr = nb_snr
+            if self.verbose:
+                print 'narrowband SNR: %.3f: %.1f dB' % (s.frequency, self.nb_snrs[i])
+        return
+        #if self.verbose:
+            #for i,s in enumerate(self.signals):
+
+
+    # See http://www.gellerlabs.com/PMAG%20Docs.htm
+    # Like GellerLabs, compute an SNR which is 20 log (FID amplitude / RMS_Sum(other inband amplitudes))
+    # We call this the wideband SNR since it is computed over the full bandwidth of the expected frequency range.
+    def compute_wideband_snr(self):
         rms_sum = 0
         for s in self.signals:              
-            # restrict to narrow band
             if  s.frequency >= self.expected_freq_low and s.frequency <= self.expected_freq_high and \
                 s.frequency != self.fdm.frequency:
                 rms_sum += (s.amplitude ** 2)
         if rms_sum > 0:
-            self.fdm_snr = 20.0 * np.log10(self.fdm.amplitude / np.sqrt(rms_sum))
+            self.wb_snr = 20.0 * np.log10(self.fdm.amplitude / np.sqrt(rms_sum))
         else:
-            self.fdm_snr = 0
-
-        # GellerLabs calls the FDM error the Figure of Merit. Lower is better.
-        # Shouldn't be converted to nT, as harminv says 'error is not really error bars on frequency'
-        self.fom_nt = self.freq_to_field(self.fdm.error * self.fdm.frequency)
-        if self.verbose > 1:
-            print "FDM SNR (dB)", self.fdm_snr, "FOM", self.fdm.error
-
-        return self.field, self.fdm, self.fom_nt, self.fdm_snr
-
-    # Given a real frequency, interpolate the FFT magnitude from the nearest points.
-    def fft_magnitude(self, freqs, amplitudes, frequency):
-        if frequency > freqs[-1]:
-            print 'Frequency out of range. Clamping to max.'
-            frequency = freqs[-1]
-        if frequency < freqs[0]:
-            print 'Frequency out of range. Clamping to min.'
-            frequency = freqs[0]
-
-        # Find bounding indexes for this frequency.
-        f_higher = np.argmax(freqs > frequency)
-        f_lower = np.min(f_higher - 1, 0)
-
-        # Interpolate the magnitude.
-        diff_amplitude = amplitudes[f_higher] - amplitudes[f_lower]
-        fractional_f = (frequency - freqs[f_lower]) / (freqs[f_higher] - freqs[f_lower])
-        interpolated_amplitude = amplitudes[f_lower] + fractional_f * diff_amplitude
-        print 'Found frequency %.3f between indexes %d and %d (%.3f and %.3f). ' \
-            'amplitudes %.3f and %.3f. Fractional freq: %.3f. Interpolated amplitude %.3f' \
-            % (frequency, f_lower, f_higher, freqs[f_lower], freqs[f_higher], amplitudes[f_lower], amplitudes[f_higher], fractional_f, interpolated_amplitude)
-        return interpolated_amplitude
+            self.wb_snr = 0
+        return
 
 
     # given the signals resulting from harmonic inversion, select the most likely FID signal
@@ -399,15 +449,21 @@ class ppm_analysis:
             print 'freq, amplitude, phase, decay, q, error'
             print signals
 
-        # find the right one. just picking the highest peak isn't enough.
-        # the proton signal should have a small decay parameter (0.3 to 2.0?), high Q (over 5000?), low error, largish amplitude
-        idx = 0
-        while idx < len(signals):
-            s = signals[idx]
-            if s.frequency < self.expected_freq_low or s.frequency > self.expected_freq_high:
-                signals = np.delete(signals, idx)
-                if self.verbose > 1:
-                    print "discarding bad freq ", s
+        # Now, just select the one with the highest narrowband SNR.
+        idx = np.argmax(self.nb_snrs)
+        self.nb_snr = self.nb_snrs[idx]
+        return self.signals[idx]
+
+
+#        # find the right one. just picking the highest peak isn't enough.
+#        # the proton signal should have a small decay parameter (0.3 to 2.0?), high Q (over 5000?), low error, largish amplitude
+#        idx = 0
+#        while idx < len(signals):
+#            s = signals[idx]
+#            if s.frequency < self.expected_freq_low or s.frequency > self.expected_freq_high:
+#                signals = np.delete(signals, idx)
+#                if self.verbose > 1:
+#                    print "discarding bad freq ", s
 #            elif s.decay < 0.05 or s.decay > 3.5:
 #                signals = np.delete(signals, idx)
 #                if self.verbose > 1:
@@ -416,29 +472,35 @@ class ppm_analysis:
 #                signals = np.delete(signals, idx)
 #                if self.verbose > 1:
 #                    print "discarding bad q    ", s
-            elif s.error > 1e-5:
-                signals = np.delete(signals, idx)
-                if self.verbose > 1:
-                    print "discarding bad error", s
+#            elif s.error > 1e-5:
+#                signals = np.delete(signals, idx)
+#                if self.verbose > 1:
+#                    print "discarding bad error", s
 #            elif s.amplitude < 0.005 or s.amplitude > 0.800:
 #                signals = np.delete(signals, idx)
 #                if self.verbose > 1:
 #                    print "discarding bad amplitude", s
-            else:
-                idx += 1
+#            else:
+#                idx += 1
 
-        # TODO - now select the one that has the highest delta FFT amplitude between the background and measurement.
-        delta_fft = []
-        for s in signals:
-            background = self.fft_magnitude(self.fft_f0, self.fft_a0, s.frequency)
-            measurement = self.fft_magnitude(self.fft_f1, self.fft_a1, s.frequency)
-            delta = measurement - background
-            #snr = (s.frequency, measurement / background)
-            #print 'SNR at %f Hz = %.3f' % (s.frequency, measurement / background)
-            print 'delta_fft at %f Hz = %.3f' % (s.frequency, measurement - background)
-            delta_fft.append(delta)
-        best_delta_fft = signals[np.argmax(delta_fft)]
-        print 'best delta_fft: %f Hz = %.3f' % (best_delta_fft.frequency, delta_fft[np.argmax(delta_fft)])
+#        # select the one that has the highest delta FFT amplitude between the background and measurement.
+#        # TODO - fft_magnitude should be computed on the entire list of frequencies rahter than each one individually 
+#        # to make the computation more efficient.
+#        #delta_fft = []
+#        narrowband_snrs = []
+#        for s in signals:
+#            background = self.fft_magnitude(self.fft_f0, self.fft_a0, s.frequency)
+#            measurement = self.fft_magnitude(self.fft_f1, self.fft_a1, s.frequency)
+#            delta = measurement - background
+#            narrowband_snr = measurement / background
+#            print 'Narrowband SNR at %f Hz = %.3f' % (s.frequency, narrowband_snr)
+#            #print 'delta_fft at %f Hz = %.3f' % (s.frequency, measurement - background)
+#            #delta_fft.append(delta)
+#            narrowband_snrs.append(narrowband_snr)
+#        #best_delta_fft = signals[np.argmax(delta_fft)]
+#        best_narrowband_snr = signals[np.argmax(narrowband_snrs)]
+#        #print 'best delta_fft: %f Hz = %.3f' % (best_delta_fft.frequency, delta_fft[np.argmax(delta_fft)])
+#        print 'best narrowband_snr: %f Hz = %.3f' % (best_narrowband_snr.frequency, narrowband_snrs[np.argmax(narrowband_snrs)])
 
         if self.verbose > 0:
             print 'candidates: freq, amplitude, phase, decay, q, error'
@@ -450,28 +512,9 @@ class ppm_analysis:
                 print 'None'
             return None
 
-#        # Prefer higher Q, higher amplitude, lower error
-#        best_q = signals[np.argmax(abs(signals.Q))]
-#        best_ampl = signals[np.argmax(signals.amplitude)]
-#        best_error = signals[np.argmin(signals.error)]
-#
-#        # Select the one that gets at least 2 out of 3
-#        if best_q == best_ampl:
-#            if self.verbose > 1:
-#                print 'best q, ampl', best_q
-#            return best_q
-#        elif best_q == best_error:
-#            if self.verbose > 1:
-#                print 'best q, error', best_q
-#            return best_q
-#        elif best_ampl == best_error:
-#            if self.verbose > 1:
-#                print 'best ampl, error', best_ampl
-#            return best_ampl
-#        else:
-#            return None     # shouldn't happen
-
-        return best_delta_fft
+        #return best_delta_fft
+        #return best_narrowband_snr
+        return signals
 
     # Output the filtered proton signal as a wave file
     def save_wavfile(self, wavfilename):
@@ -542,7 +585,7 @@ class ppm_analysis:
         t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
         with open(self.log_fname, 'r') as f:
             for line in f:
-                # ts, frequency, amplitude, decay, Q, error, fom_nt, fdm_snr))
+                # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
                 data = [float(i) for i in line.split()]
                 ts = data[0]
                 if ts >= t_earliest:
@@ -689,12 +732,13 @@ def main():
     geometrics_path = None 
     #local_offset = -369.0
     local_offset = 0
+    plot_decimation = 1
 
     # Parse command line options
     try:
         opts,args = getopt.getopt (sys.argv[1:],
-                'f:o:vp:w:at:i:g:hO:',
-                ['filename=', 'output=', 'verbose', 'plot', 'wavfile=', 'audio', 'time=',
+                'f:o:vp:d:w:at:i:g:hO:',
+                ['filename=', 'output=', 'verbose', 'plot', 'plot_decimation=', 'wavfile=', 'audio', 'time=',
                  'intermagnet=', 'geometrics=', 'offset=', 'help'])
     except getopt.GetoptError:
         usage (sys.argv[0])
@@ -719,6 +763,8 @@ def main():
                 plot_fname = a
             else:
                 plot_fname = 'ppm_plot.png'
+        elif o in ('-d', '--plot_decimation'):
+            plot_decimation = int(a)
         elif o in ('-f', '--filename'):
             input_fname = a
         #elif o in ('-t', '--testdata'):
@@ -783,21 +829,21 @@ def main():
                 ppm.load_geometrics_data(geometrics_path, 'Geometrics')
 
             # try to identify the FID signal
-            field, fdm, fom_nt, fdm_snr = ppm.analyze(plot_fname=plot_fname, wavfilename=wavfname)
+            field, fdm, fom, nb_snr, wb_snr = ppm.analyze(plot_fname=plot_fname, wavfilename=wavfname)
             if fdm == None:
                 print 'Failed to find a signal in file %s' % (f)
                 continue
 
             # append analysis result to logfile
             print   ts, 'Fscalar:', field, 'Freq:', fdm.frequency, 'Amplitude:', fdm.amplitude, 'Decay:', fdm.decay, \
-                'Q:', fdm.Q, 'FOM:', fdm.error, 'SNR:', fdm_snr
+                'Q:', fdm.Q, 'FOM:', fdm.error, 'NB SNR:', nb_snr, 'WB SNR:', wb_snr
 
             with open(output_fname, 'a') as outf:
                 outf.write('%u %f %f %f %f %f %g %f %f\n' % \
-                       (ts, field, fdm.frequency, fdm.amplitude, fdm.decay, fdm.Q, fdm.error, fom_nt, fdm_snr))
+                       (ts, field, fdm.frequency, fdm.amplitude, fdm.decay, fdm.Q, fdm.error, fom, wb_snr))
 
             # Plot only every Nth analysis, since plotting takes a bit of time.
-            if plot_fname and counter % 5 == 0:
+            if plot_fname and counter % plot_decimation == 0:
                 if verbose:
                     print 'Plotting...'
                 ppm.multiplot_results(plot_fname)
