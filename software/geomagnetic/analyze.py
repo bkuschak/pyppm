@@ -346,7 +346,10 @@ class ppm_analysis:
 			if  s.frequency >= self.expected_freq_low and s.frequency <= self.expected_freq_high and \
 			    s.frequency != self.fdm.frequency:
 				rms_sum += (s.amplitude ** 2)
-		self.fdm_snr = 20.0 * np.log10(self.fdm.amplitude / np.sqrt(rms_sum))
+		if rms_sum > 0:
+			self.fdm_snr = 20.0 * np.log10(self.fdm.amplitude / np.sqrt(rms_sum))
+		else:
+			self.fdm_snr = 0
 
 		# GellerLabs calls the FDM error the Figure of Merit. 
 		# Shouldn't be converted to nT, as harminv says 'error is not really error bars on frequency'
