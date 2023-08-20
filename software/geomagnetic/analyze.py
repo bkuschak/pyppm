@@ -357,9 +357,9 @@ class ppm_analysis:
 		if self.verbose > 0:
 			print "FDM SNR (dB)", self.fdm_snr, "FOM", self.fdm.error
 
-		if plot:
+		if plot_fname:
 			#self.plot_results()
-			self.multiplot_results()
+			self.multiplot_results(plot_fname)
 
 		return self.field, self.fdm, self.fom_nt, self.fdm_snr
 
@@ -494,7 +494,7 @@ class ppm_analysis:
 	# A large page multiplot for webpage: time domain filtered FID, filtered envelope, FFT FID
 	# history of our data.  Maybe add: intermagnet station for reference? filtered dB/dt?
 	#
-	def multiplot_results(self):
+	def multiplot_results(self, plot_fname=None):
 		# 60 Hz harmonics 
 		powerline = np.asarray(range(60,100*60,60)) 
 
@@ -593,7 +593,7 @@ class ppm_analysis:
 		#fig.set_size_inches(w=11,h=8.5)
 		fig.set_size_inches(11,8.5)
 		fig.tight_layout(rect=[0, 0.03, 1, 0.95])		# leave some space for suptitle
-		fig.savefig('ppm_plot.png', bbox_inches='tight')	# FIXME should we add timestamp to filename and create a link to latest?
+		fig.savefig(plot_fname, bbox_inches='tight')		# FIXME should we add timestamp to filename and create a link to latest?
 
 
 	# Generate some known signals for testing.
@@ -631,7 +631,7 @@ to the output log file, if it hasn't already been done.
 
   -f, --filename=FILENAME    Base filename, appended with timestamp
   -o, --output=STRING        Output log file name
-  -p, --plot                 Generate a plot file ppm_plot.png
+  -p, --plot=FILENAME        Generate a plot to the specified file.
   -v, --verbose              Add this flag (multiple times) to increase verbosity
   -w, --wavfile=FILENAME     Create an audio file of the filtered proton signal
   -a, --audio                Play the audio file after each analysis
@@ -654,12 +654,13 @@ def main():
 	earliest_filetime = 0
 	intermagnet_path = None 
 	geometrics_path = None 
-	local_offset = -369.0
+	#local_offset = -369.0
+	local_offset = 0
 
 	# Parse command line options
 	try:
 		opts,args = getopt.getopt (sys.argv[1:],
-				'f:o:vpw:at:i:g:hO:',
+				'f:o:vp:w:at:i:g:hO:',
 				['filename=', 'output=', 'verbose', 'plot', 'wavfile=', 'audio', 'time=',
 				 'intermagnet=', 'geometrics=', 'offset=', 'help'])
 	except getopt.GetoptError:
@@ -681,6 +682,10 @@ def main():
 				earliest_filetime += time.time()
 		elif o in ('-p', '--plot'):
 			plot = True
+			if a:
+				plot_fname = a
+			else:
+				plot_fname = 'ppm_plot.png'
 		elif o in ('-f', '--filename'):
 			input_fname = a
 		#elif o in ('-t', '--testdata'):
@@ -742,7 +747,7 @@ def main():
 				ppm.load_geometrics_data(geometrics_path, 'Geometrics')
 
 			# try to identify the FID signal
-			field, fdm, fom_nt, fdm_snr = ppm.analyze(plot=plot, wavfilename=wavfname)
+			field, fdm, fom_nt, fdm_snr = ppm.analyze(plot_fname=plot_fname, wavfilename=wavfname)
 			if fdm == None:
 				print 'Failed to find a signal in file %s' % (f)
 				continue
