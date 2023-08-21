@@ -663,7 +663,7 @@ class ppm_analysis:
         font = FontProperties().copy()
         font.set_weight('bold')
         plt.grid()
-        ax.legend(loc='upper left', framealpha=0.7)
+        ax.legend(loc='upper left', framealpha=0.7, fontsize=10)
         ax2 = ax.twinx()
         ax2.plot(self.filt_freq, self.filt_mag, '-', label='filter', color='orange')
         ax2.legend(loc='upper right', framealpha=0.7)
@@ -679,7 +679,7 @@ class ppm_analysis:
         plt.plot([x[0] for x in self.intermag_recent], [x[1] for x in self.intermag_recent], '-', color='red', label=self.intermag_name)
         plt.plot([x[0] for x in self.geometrics_recent], [x[1] for x in self.geometrics_recent], '-', color='orange', label=self.geometrics_name)
         plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
-        plt.ylim(self.expected_field_low+950, self.expected_field_high-900)
+        plt.ylim(self.expected_field_low+1000, self.expected_field_high-925)
         plt.ylabel('Fscalar (nT)')
         plt.grid()
         plt.legend(loc='upper left', framealpha=0.7)
