@@ -311,9 +311,15 @@ class ppm_analysis:
 
         #b, a = signal.iirpeak(w0, Q)   # FIXME - not available in scipy-0.14
         #self.a1f = np.array(self.a1)
-
-        b, a = iirpeak(w0, Q)       # use local - not available in scipy-0.14
+        #b, a = iirpeak(w0, Q)       # use local - not available in scipy-0.14
+        b, a = signal.butter(4, [self.expected_freq_low / (self.fs/2), self.expected_freq_high / (self.fs/2)], btype='bandpass', output='ba')
         self.a1f = signal.filtfilt(b, a, self.a1)   
+
+        # Filter Frequency response
+        f, h = signal.freqz(b, a, 2048)
+        self.filt_freq = f * self.fs / (2 * np.pi)
+        #self.filt_mag = 20*np.log10(np.maximum(abs(h), 1e-5))
+        self.filt_mag = np.maximum(abs(h), 1e-5)
 
         # FIXME - we should truncate the beginning and end that are subject to filter startup, so they don't throw off
         # the harmonic inversion decay calculation
@@ -596,7 +602,9 @@ class ppm_analysis:
         # Multiple plots of different sizes
         fig = plt.figure(1)
         mpl.rcParams['font.size'] =  12
-        fig.suptitle('PyPPM Proton Precession Magnetometer')
+        fig.suptitle('PyPPM Proton Precession Magnetometer. Updated %s UTC.' % 
+            (dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+            #(dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
         mpl.rcParams['font.size'] = 9
         gs = gridspec.GridSpec(8,2)
 
@@ -631,13 +639,15 @@ class ppm_analysis:
         for harmonic in powerline:
             plt.axvline(harmonic, color='grey', linestyle='--', linewidth=1, label=label)
             label = None
-        plt.xlim(self.expected_freq_low-100, self.expected_freq_high+100)
         plt.xlabel('Freq (Hz)')
         plt.ylabel('Amplitude')
         font = FontProperties().copy()
         font.set_weight('bold')
         plt.grid()
         plt.legend(loc='upper left', framealpha=0.7)
+        ax2 = ax.twinx()
+        ax2.plot(self.filt_freq, self.filt_mag, '-', label='filter', color='orange')
+        plt.xlim(self.expected_freq_low-100, self.expected_freq_high+100)
 
         # Recent field strength plot
         ax = plt.subplot(gs[4:8, :])        # next rows, all columns
