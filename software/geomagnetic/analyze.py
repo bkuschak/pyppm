@@ -612,7 +612,7 @@ class ppm_analysis:
         ax = plt.subplot(gs[0:2, 0])        # top rows, first column
         plt.plot(np.array(self.t0), np.array(self.a0), 'b', label='background')
         plt.plot(np.array(self.t1), np.array(self.a1), 'r', label='measurement')
-        plt.title('Raw ADC measurements (%d samples at %.1f kHz)' % (len(self.t0), self.fs/1000.0))
+        plt.title('%d ADC samples at %.1f kHz' % (len(self.t0), self.fs/1000.0))
         plt.ylabel('Voltage (V)')
         plt.xlabel('Time (s)')
         plt.legend(loc='lower right', framealpha=0.7)
@@ -623,7 +623,7 @@ class ppm_analysis:
         fdm_decay = 1.414 * self.fdm.amplitude * np.exp(-self.fdm.decay * np.array(self.t1))
         plt.plot(np.array(self.t1), fdm_decay, color='black', linestyle='--')
         plt.plot(np.array(self.t1), -fdm_decay, color='black', linestyle='--')
-        plt.title('Filtered ADC measurements and FDM fit')
+        plt.title('Filtered ADC and FDM fit')
         plt.ylabel('Voltage (V)')
         plt.xlabel('Time (s)')
 
