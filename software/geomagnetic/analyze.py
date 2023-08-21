@@ -606,7 +606,7 @@ class ppm_analysis:
             (dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
             #(dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
         mpl.rcParams['font.size'] = 9
-        gs = gridspec.GridSpec(8,2)
+        gs = gridspec.GridSpec(8, 3)         # 8 rows, 3 columns. TODO wspace
 
         # Plot time domain
         ax = plt.subplot(gs[0:2, 0])        # top rows, first column
@@ -627,6 +627,24 @@ class ppm_analysis:
         plt.ylabel('Voltage (V)')
         plt.xlabel('Time (s)')
 
+        # Plot text
+        ax = plt.subplot(gs[0:2, 2])        # top rows, third column
+        ax.axis('off')
+        ax.text(0.0, 1.00, 'F(scalar):', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 1.00, '%.2f nT' % (self.field), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.85, 'Frequency:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.85, '%.3f Hz' % (self.fdm.frequency), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.70, 'Amplitude:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.70, '%.1f mVpp' % (2*1.414*self.fdm.amplitude*1000), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.55, 'Tau2:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.55, '%.2f sec' % (1/self.fdm.decay), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.40, 'FOM:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.40, '%.1g' % (self.fdm.error), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.25, 'NB SNR:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.25, '%.1f dB' % (self.nb_snr), ha='left', va='top', fontsize=12)
+        ax.text(0.0, 0.10, 'WB SNR:', ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.10, '%.1f dB' % (self.wb_snr), ha='left', va='top', fontsize=12)
+
         # Plot frequency domain
         ax = plt.subplot(gs[2:4, :])        # next rows, all columns
         plt.plot(np.array(self.fft_f0), np.array(self.fft_a0), 'b', label='background')
@@ -644,9 +662,10 @@ class ppm_analysis:
         font = FontProperties().copy()
         font.set_weight('bold')
         plt.grid()
-        plt.legend(loc='upper left', framealpha=0.7)
+        ax.legend(loc='upper left', framealpha=0.7)
         ax2 = ax.twinx()
         ax2.plot(self.filt_freq, self.filt_mag, '-', label='filter', color='orange')
+        ax2.legend(loc='upper right', framealpha=0.7)
         plt.xlim(self.expected_freq_low-100, self.expected_freq_high+100)
 
         # Recent field strength plot
