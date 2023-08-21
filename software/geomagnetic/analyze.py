@@ -30,6 +30,7 @@ import matplotlib.dates as mdates
 from matplotlib.font_manager import FontProperties
 from scipy import signal
 
+location = 'Bend, Oregon'
 
 # Import iirpeak from a recent scipy, since these are not present in scipy-0.14
 def iirpeak(w0, Q, fs=2.0):
@@ -602,8 +603,8 @@ class ppm_analysis:
         # Multiple plots of different sizes
         fig = plt.figure(1)
         mpl.rcParams['font.size'] =  12
-        fig.suptitle('PyPPM Proton Precession Magnetometer. Updated %s UTC.' % 
-            (dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
+        fig.suptitle('PyPPM Proton Precession Magnetometer. %s. Updated %s UTC.' % 
+            (location, dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
             #(dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
         mpl.rcParams['font.size'] = 9
         gs = gridspec.GridSpec(8, 3)         # 8 rows, 3 columns. TODO wspace
