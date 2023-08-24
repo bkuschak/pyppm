@@ -7,6 +7,7 @@
 
 import pyppm            
 import harminv              # https://github.com/aaren/pharminv
+from pykalman import KalmanFilter # https://github.com/pykalman/pykalman
 
 import sys
 import time
@@ -345,7 +346,7 @@ class ppm_analysis:
         # Select best candidate signal, or None if we couldn't find one.
         self.fdm = self.select_candidate(self.signals)
         if self.fdm == None:
-            return None, None, 0.0, 0.0
+            return None, None, 0.0, 0.0, 0.0
 
         self.fdm_time_constant = 1.0 / self.fdm.decay
         self.field = self.freq_to_field(self.fdm.frequency)
@@ -359,7 +360,7 @@ class ppm_analysis:
         #if self.verbose > 1:
             #print "FDM wideband SNR (dB)", self.wb_snr, "FOM", self.fdm.error
 
-        return self.field, self.fdm, self.fom, self.nb_snr, self.wb_snr
+        return self.field, self.fdm, self.fom, self.fdm.nb_snr, self.wb_snr
 
 #    # Given a real frequency, interpolate the FFT magnitude from the nearest points.
 #    def fft_magnitude(self, freqs, amplitudes, frequency):
@@ -394,12 +395,11 @@ class ppm_analysis:
     def compute_narrowband_snrs(self):
         # TODO Sort the FDM by frequency if not already done.
 
-        # Add new field to structured array. Default to zero SNR.
-        # FIXME - not working. use separate array for now
-        #self.signals = rfn.append_fields(self.signals, 'nb_snr', [0]*len(self.signals))
-        self.nb_snrs = []
-        for (i, f) in enumerate(self.signals):
-            self.nb_snrs.append(0)
+        # Add new field to structured array, to hold the narrowband SNR. Default to zero SNR.
+        # For some reason asrecarray=True does not work, so explicitly convert the structured array to recarray,
+        # so we can access by member names.
+        self.signals = rfn.append_fields(self.signals, names='nb_snr', data=np.zeros(self.signals.shape), usemask=False)
+        self.signals = np.rec.array(self.signals) 
 
         # Iterate over the FDM signals by increasing frequency.
         # This code assumes frequencies fft_f0 and fft_f1 are the same, which they are since both background and measurement are the same length and sample rate.
@@ -421,10 +421,11 @@ class ppm_analysis:
 
             # Compute a narrowband SNR at this frequency.
             nb_snr = 20 * np.log10(measurement_ampl / background_ampl)
-            self.nb_snrs[i] = nb_snr
-            #self.signals[i].nb_snr = nb_snr
+            self.signals[i].nb_snr = nb_snr
             if self.verbose:
-                print 'narrowband SNR: %.3f: %.1f dB' % (s.frequency, self.nb_snrs[i])
+                print 'narrowband SNR: %.3f: %.1f dB' % (s.frequency, s.nb_snr)
+
+        print self.signals
         return
         #if self.verbose:
             #for i,s in enumerate(self.signals):
@@ -456,39 +457,29 @@ class ppm_analysis:
             print 'freq, amplitude, phase, decay, q, error'
             print signals
 
-        # Now, just select the one with the highest narrowband SNR.
-        idx = np.argmax(self.nb_snrs)
-        self.nb_snr = self.nb_snrs[idx]
-        return self.signals[idx]
+        # Exclude any candidates that have values out of the expected range.
+        # The proton signal should have a small tau2 (0.3 to 2.0), high Q (over 5000?), low error, largish amplitude
+        idx = 0
+        while idx < len(signals):
+            s = signals[idx]
+            if s.frequency < self.expected_freq_low or s.frequency > self.expected_freq_high:
+                if self.verbose > 1: print "discarding bad freq", s
+                signals = np.delete(signals, idx)
+            elif s.decay < 1/0.8 or s.decay > 1/0.2:    # tau2 is 1/decay
+                if self.verbose > 1: print "discarding bad decay", s
+                signals = np.delete(signals, idx)
+            elif abs(s.Q) < 2000:
+                if self.verbose > 1: print "discarding bad Q", s
+                signals = np.delete(signals, idx)
+            elif s.error > 5e-7:
+                if self.verbose > 1: print "discarding bad error", s
+                signals = np.delete(signals, idx)
+            elif s.amplitude < 0.03 or s.amplitude > 0.50:  # RMS amplitude
+                if self.verbose > 1: print "discarding bad amplitude", s
+                signals = np.delete(signals, idx)
+            else:
+                idx += 1
 
-
-#        # find the right one. just picking the highest peak isn't enough.
-#        # the proton signal should have a small decay parameter (0.3 to 2.0?), high Q (over 5000?), low error, largish amplitude
-#        idx = 0
-#        while idx < len(signals):
-#            s = signals[idx]
-#            if s.frequency < self.expected_freq_low or s.frequency > self.expected_freq_high:
-#                signals = np.delete(signals, idx)
-#                if self.verbose > 1:
-#                    print "discarding bad freq ", s
-#            elif s.decay < 0.05 or s.decay > 3.5:
-#                signals = np.delete(signals, idx)
-#                if self.verbose > 1:
-#                    print "discarding bad decay", s
-#            elif abs(s.Q) < 1500.0:
-#                signals = np.delete(signals, idx)
-#                if self.verbose > 1:
-#                    print "discarding bad q    ", s
-#            elif s.error > 1e-5:
-#                signals = np.delete(signals, idx)
-#                if self.verbose > 1:
-#                    print "discarding bad error", s
-#            elif s.amplitude < 0.005 or s.amplitude > 0.800:
-#                signals = np.delete(signals, idx)
-#                if self.verbose > 1:
-#                    print "discarding bad amplitude", s
-#            else:
-#                idx += 1
 
 #        # select the one that has the highest delta FFT amplitude between the background and measurement.
 #        # TODO - fft_magnitude should be computed on the entire list of frequencies rahter than each one individually 
@@ -519,9 +510,10 @@ class ppm_analysis:
                 print 'None'
             return None
 
-        #return best_delta_fft
-        #return best_narrowband_snr
-        return signals
+        # Now, just select the one with the highest narrowband SNR.
+        idx = np.argmax(signals.nb_snr)
+        return signals[idx]
+
 
     # Output the filtered proton signal as a wave file
     def save_wavfile(self, wavfilename):
@@ -589,7 +581,8 @@ class ppm_analysis:
         # Gather recent processed data from the log file
         t_recent = []
         f_recent = []
-        t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
+        #t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
+        t_earliest = time.time() - (1*24*60*60)     # Limit to most recent 1 days
         with open(self.log_fname, 'r') as f:
             for line in f:
                 # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
@@ -642,7 +635,7 @@ class ppm_analysis:
         ax.text(0.0, 0.40, 'FOM:', ha='left', va='top', fontsize=12)
         ax.text(0.5, 0.40, '%.1g' % (self.fdm.error), ha='left', va='top', fontsize=12)
         ax.text(0.0, 0.25, 'NB SNR:', ha='left', va='top', fontsize=12)
-        ax.text(0.5, 0.25, '%.1f dB' % (self.nb_snr), ha='left', va='top', fontsize=12)
+        ax.text(0.5, 0.25, '%.1f dB' % (self.fdm.nb_snr), ha='left', va='top', fontsize=12)
         ax.text(0.0, 0.10, 'WB SNR:', ha='left', va='top', fontsize=12)
         ax.text(0.5, 0.10, '%.1f dB' % (self.wb_snr), ha='left', va='top', fontsize=12)
 
