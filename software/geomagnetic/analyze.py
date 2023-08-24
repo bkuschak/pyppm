@@ -362,27 +362,6 @@ class ppm_analysis:
 
         return self.field, self.fdm, self.fom, self.fdm.nb_snr, self.wb_snr
 
-#    # Given a real frequency, interpolate the FFT magnitude from the nearest points.
-#    def fft_magnitude(self, freqs, amplitudes, frequency):
-#        if frequency > freqs[-1]:
-#            print 'Frequency out of range. Clamping to max.'
-#            frequency = freqs[-1]
-#        if frequency < freqs[0]:
-#            print 'Frequency out of range. Clamping to min.'
-#            frequency = freqs[0]
-#
-#        # Find bounding indexes for this frequency.
-#        f_higher = np.argmax(freqs > frequency)
-#        f_lower = np.min(f_higher - 1, 0)
-#
-#        # Interpolate the magnitude.
-#        diff_amplitude = amplitudes[f_higher] - amplitudes[f_lower]
-#        fractional_f = (frequency - freqs[f_lower]) / (freqs[f_higher] - freqs[f_lower])
-#        interpolated_amplitude = amplitudes[f_lower] + fractional_f * diff_amplitude
-#        print 'Found frequency %.3f between indexes %d and %d (%.3f and %.3f). ' \
-#            'amplitudes %.3f and %.3f. Fractional freq: %.3f. Interpolated amplitude %.3f' \
-#            % (frequency, f_lower, f_higher, freqs[f_lower], freqs[f_higher], amplitudes[f_lower], amplitudes[f_higher], fractional_f, interpolated_amplitude)
-#        return interpolated_amplitude
 
     # Given length 2 lists for x and y, and xp value somewhere between x[0] and x[1], return an interpolated value y at xp.
     def interpolate(self, x, y, xp):
@@ -427,8 +406,6 @@ class ppm_analysis:
 
         print self.signals
         return
-        #if self.verbose:
-            #for i,s in enumerate(self.signals):
 
 
     # See http://www.gellerlabs.com/PMAG%20Docs.htm
@@ -479,26 +456,6 @@ class ppm_analysis:
                 signals = np.delete(signals, idx)
             else:
                 idx += 1
-
-
-#        # select the one that has the highest delta FFT amplitude between the background and measurement.
-#        # TODO - fft_magnitude should be computed on the entire list of frequencies rahter than each one individually 
-#        # to make the computation more efficient.
-#        #delta_fft = []
-#        narrowband_snrs = []
-#        for s in signals:
-#            background = self.fft_magnitude(self.fft_f0, self.fft_a0, s.frequency)
-#            measurement = self.fft_magnitude(self.fft_f1, self.fft_a1, s.frequency)
-#            delta = measurement - background
-#            narrowband_snr = measurement / background
-#            print 'Narrowband SNR at %f Hz = %.3f' % (s.frequency, narrowband_snr)
-#            #print 'delta_fft at %f Hz = %.3f' % (s.frequency, measurement - background)
-#            #delta_fft.append(delta)
-#            narrowband_snrs.append(narrowband_snr)
-#        #best_delta_fft = signals[np.argmax(delta_fft)]
-#        best_narrowband_snr = signals[np.argmax(narrowband_snrs)]
-#        #print 'best delta_fft: %f Hz = %.3f' % (best_delta_fft.frequency, delta_fft[np.argmax(delta_fft)])
-#        print 'best narrowband_snr: %f Hz = %.3f' % (best_narrowband_snr.frequency, narrowband_snrs[np.argmax(narrowband_snrs)])
 
         if self.verbose > 0:
             print 'candidates: freq, amplitude, phase, decay, q, error'
