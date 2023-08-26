@@ -472,6 +472,41 @@ class ppm_analysis:
         return signals[idx]
 
 
+    # Batch process the data to apply a Kalman smoothing filter.
+    def kalman_smoothing(self, t, y):
+        print 'Smoothing...'
+
+        # https://stackoverflow.com/questions/61678196/implementing-1d-kalman-filter-smooth-python
+
+        # Treat y as position, and that y-dot is
+        # an unobserved state - the velocity,
+        # which is modelled as changing slowly (inertia)
+        observation_matrix = np.asarray([[1, 0]])
+
+        # state vector [y,
+        #               y_dot]
+
+        # transition_matrix =  [[1, dt],
+        #                       [0, 1]]
+
+        # dt betweeen observations:
+        dt = [np.mean(np.diff(t))] + list(np.diff(t))
+
+        transition_matrices = np.asarray([[[1, each_dt],[0, 1]] for each_dt in dt])
+
+        kf = KalmanFilter(  n_dim_obs = 1, \
+                            observation_covariance = 5000, \
+                            initial_state_mean = [52000, 0], \
+                            transition_matrices = transition_matrices, \
+                            observation_matrices = observation_matrix)
+        kf = kf.em(y)
+        print 'kf = ', kf
+        (smoothed_state_means, smoothed_state_covariances) = kf.smooth(y)
+        print 'Smoothing done.'
+        print 'smoothed state covariances:', smoothed_state_covariances[:,0]
+        #return t, y
+        return t, smoothed_state_means[:,0]
+
     # Output the filtered proton signal as a wave file
     def save_wavfile(self, wavfilename):
         scipy.io.wavfile.write(wavfilename, self.fs, self.a1f)
@@ -540,6 +575,7 @@ class ppm_analysis:
         f_recent = []
         #t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
         t_earliest = time.time() - (1*24*60*60)     # Limit to most recent 1 days
+        #t_earliest = time.time() - (0.25*24*60*60)     # Limit to most recent 0.25 days
         with open(self.log_fname, 'r') as f:
             for line in f:
                 # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
@@ -549,6 +585,11 @@ class ppm_analysis:
                     # timestamp in a format suitable for plotting
                     t_recent.append(mdates.date2num(dt.datetime.utcfromtimestamp(ts)))  # UTC time
                     f_recent.append(data[1] - self.local_offset)        # offset corrected
+
+        t_sorted, f_sorted = (list(t) for t in zip(*sorted(zip(t_recent, f_recent))))
+
+        # Apply Kalman filtering to the raw magnetometer data.
+        t_smoothed, f_smoothed = self.kalman_smoothing(t_sorted, f_sorted)
 
         # Multiple plots of different sizes
         fig = plt.figure(1)
@@ -628,7 +669,9 @@ class ppm_analysis:
         ax.xaxis.set_major_formatter(timefmt)
         plt.plot([x[0] for x in self.intermag_recent], [x[1] for x in self.intermag_recent], '-', color='red', label=self.intermag_name)
         plt.plot([x[0] for x in self.geometrics_recent], [x[1] for x in self.geometrics_recent], '-', color='orange', label=self.geometrics_name)
-        plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
+        #plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
+        plt.plot(t_sorted, f_sorted, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
+        plt.plot(t_smoothed, f_smoothed, '-', label='Smoothed', color='blue')  # kalman smoothed
         plt.ylim(self.expected_field_low+1000, self.expected_field_high-925)
         plt.ylabel('Fscalar (nT)')
         plt.grid()
