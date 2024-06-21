@@ -19,6 +19,7 @@ import datetime as dt
 import scipy.io.wavfile
 import numpy as np
 import numpy.lib.recfunctions as rfn
+from scipy import ndimage
 
 # Allow MPL to work with no display attached.
 import matplotlib
@@ -442,7 +443,7 @@ class ppm_analysis:
             if s.frequency < self.expected_freq_low or s.frequency > self.expected_freq_high:
                 if self.verbose > 1: print "discarding bad freq", s
                 signals = np.delete(signals, idx)
-            elif s.decay < 1/0.8 or s.decay > 1/0.2:    # tau2 is 1/decay
+            elif s.decay < 1/0.9 or s.decay > 1/0.2:    # tau2 is 1/decay
                 if self.verbose > 1: print "discarding bad decay", s
                 signals = np.delete(signals, idx)
             elif abs(s.Q) < 2000:
@@ -471,6 +472,13 @@ class ppm_analysis:
         idx = np.argmax(signals.nb_snr)
         return signals[idx]
 
+
+    # Apply a median filter to the data
+    def median_filter(self, t, y):
+        #filter_size = 100
+        filter_size = 50
+        filtered = ndimage.median_filter(y, size=filter_size)
+        return t, filtered
 
     # Batch process the data to apply a Kalman smoothing filter.
     def kalman_smoothing(self, t, y):
@@ -574,8 +582,9 @@ class ppm_analysis:
         t_recent = []
         f_recent = []
         #t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
-        t_earliest = time.time() - (1*24*60*60)     # Limit to most recent 1 days
-        #t_earliest = time.time() - (0.25*24*60*60)     # Limit to most recent 0.25 days
+        #t_earliest = time.time() - (3*24*60*60)     # Limit to most recent 3 days
+        #t_earliest = time.time() - (1*24*60*60)     # Limit to most recent 1 days
+        t_earliest = time.time() - (0.25*24*60*60)     # Limit to most recent 0.25 days
         with open(self.log_fname, 'r') as f:
             for line in f:
                 # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
@@ -586,10 +595,19 @@ class ppm_analysis:
                     t_recent.append(mdates.date2num(dt.datetime.utcfromtimestamp(ts)))  # UTC time
                     f_recent.append(data[1] - self.local_offset)        # offset corrected
 
+        # Sort by time
+        #sorted_idx = t_recent.argsort()
+        #t_sorted = t_recent[sorted_idx]
+        #f_sorted = f_sorted[sorted_idx]
         t_sorted, f_sorted = (list(t) for t in zip(*sorted(zip(t_recent, f_recent))))
 
+        # Apply median filter to the raw magnetometer data.
+        t_filtered, f_filtered = self.median_filter(t_sorted, f_sorted)
+        f_mean = np.mean(f_filtered)
+        f_stddev = np.std(f_filtered)
+
         # Apply Kalman filtering to the raw magnetometer data.
-        t_smoothed, f_smoothed = self.kalman_smoothing(t_sorted, f_sorted)
+        #t_smoothed, f_smoothed = self.kalman_smoothing(t_sorted, f_sorted)
 
         # Multiple plots of different sizes
         fig = plt.figure(1)
@@ -598,10 +616,10 @@ class ppm_analysis:
             (location, dt.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")))
             #(dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")))
         mpl.rcParams['font.size'] = 9
-        gs = gridspec.GridSpec(8, 3)         # 8 rows, 3 columns. TODO wspace
+        gs = gridspec.GridSpec(10, 3)         # 10 rows, 3 columns. TODO wspace
 
         # Plot time domain
-        ax = plt.subplot(gs[0:2, 0])        # top rows, first column
+        ax = plt.subplot(gs[0:2, 0])        # top 2 rows, first column
         plt.plot(np.array(self.t0), np.array(self.a0), 'b', label='background')
         plt.plot(np.array(self.t1), np.array(self.a1), 'r', label='measurement')
         plt.title('%d ADC samples at %.1f kHz' % (len(self.t0), self.fs/1000.0))
@@ -610,7 +628,7 @@ class ppm_analysis:
         plt.legend(loc='lower right', framealpha=0.7)
 
         # Plot filtered time domain and FDM decay fit
-        ax = plt.subplot(gs[0:2, 1])        # top rows, second column
+        ax = plt.subplot(gs[0:2, 1])        # top 2 rows, second column
         plt.plot(np.array(self.t1), np.array(self.a1f), 'g')
         fdm_decay = 1.414 * self.fdm.amplitude * np.exp(-self.fdm.decay * np.array(self.t1))
         plt.plot(np.array(self.t1), fdm_decay, color='black', linestyle='--')
@@ -620,7 +638,7 @@ class ppm_analysis:
         plt.xlabel('Time (s)')
 
         # Plot text
-        ax = plt.subplot(gs[0:2, 2])        # top rows, third column
+        ax = plt.subplot(gs[0:2, 2])        # top 2 rows, third column
         ax.axis('off')
         ax.text(0.0, 1.00, 'F(scalar):', ha='left', va='top', fontsize=12)
         ax.text(0.5, 1.00, '%.2f nT' % (self.field), ha='left', va='top', fontsize=12)
@@ -638,12 +656,12 @@ class ppm_analysis:
         ax.text(0.5, 0.10, '%.1f dB' % (self.wb_snr), ha='left', va='top', fontsize=12)
 
         # Plot frequency domain
-        ax = plt.subplot(gs[2:4, :])        # next rows, all columns
+        ax = plt.subplot(gs[2:4, :])        # next 2 rows, all columns
         plt.plot(np.array(self.fft_f0), np.array(self.fft_a0), 'b', label='background')
         plt.plot(np.array(self.fft_f1), np.array(self.fft_a1), 'r', label='measurement')
         plt.plot(np.array(self.fft_f1f), np.array(self.fft_a1f), 'g', label='post-filtered')
-        plt.axvspan(self.expected_freq_low-100, self.expected_freq_low, alpha=0.2, color='grey')
-        plt.axvspan(self.expected_freq_high, self.expected_freq_high+100, alpha=0.2, color='grey')
+        plt.axvspan(self.expected_freq_low-75, self.expected_freq_low, alpha=0.2, color='grey')
+        plt.axvspan(self.expected_freq_high, self.expected_freq_high+75, alpha=0.2, color='grey')
         plt.axvline(x=self.fdm.frequency, color='red', linestyle=':', linewidth=3, label='detected signal', alpha=0.5)
         label = '60 Hz harmonic'
         for harmonic in powerline:
@@ -658,10 +676,10 @@ class ppm_analysis:
         ax2 = ax.twinx()
         ax2.plot(self.filt_freq, self.filt_mag, '-', label='filter', color='orange')
         ax2.legend(loc='upper right', framealpha=0.7)
-        plt.xlim(self.expected_freq_low-100, self.expected_freq_high+100)
+        plt.xlim(self.expected_freq_low-75, self.expected_freq_high+75)
 
         # Recent field strength plot
-        ax = plt.subplot(gs[4:8, :])        # next rows, all columns
+        ax = plt.subplot(gs[4:, :])        # next rows, all columns
         timefmt = mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S\n')      # workaround TZ issue
         #timefmt = mdates.DateFormatter('%Y-%m-%d\n%H:%M:%S\n%Z')   
         #ax.xaxis.set_major_locator(mdates.DayLocator()) 
@@ -670,13 +688,16 @@ class ppm_analysis:
         plt.plot([x[0] for x in self.intermag_recent], [x[1] for x in self.intermag_recent], '-', color='red', label=self.intermag_name)
         plt.plot([x[0] for x in self.geometrics_recent], [x[1] for x in self.geometrics_recent], '-', color='orange', label=self.geometrics_name)
         #plt.plot(t_recent, f_recent, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
-        plt.plot(t_sorted, f_sorted, '.', markersize=1, label='PyPPM', color='purple')  # offset corrected
-        plt.plot(t_smoothed, f_smoothed, '-', label='Smoothed', color='blue')  # kalman smoothed
-        plt.ylim(self.expected_field_low+1000, self.expected_field_high-925)
+        plt.plot(t_sorted, f_sorted, '.', markersize=3, alpha=0.5, label='Raw measurement', color='orange')  # offset corrected
+        #plt.plot(t_smoothed, f_smoothed, '-', label='Smoothed', color='blue')  # kalman smoothed
+        plt.plot(t_filtered, f_filtered, '-', label='Median filtered', color='darkblue')  # filtered
+        #plt.ylim(self.expected_field_low+1000, self.expected_field_high-925)
+        plt.ylim([f_mean-3*f_stddev, f_mean+3*f_stddev])
         plt.ylabel('Fscalar (nT)')
         plt.grid()
         plt.legend(loc='upper left', framealpha=0.7)
         ax.xaxis.grid(which='minor', linestyle='--')
+        #ax.ticklabel_format(axes='y', style='plain')     # turn off scientific notation
     
         # Textual data
         # Annotate the plot: fscalar, precession frequency, fid amplitude, q, polarization time, tau2, FOM, 
@@ -690,7 +711,7 @@ class ppm_analysis:
         if self.interactive:
             plt.show()
         #fig.set_size_inches(w=11,h=8.5)
-        fig.set_size_inches(11, 8.5)
+        fig.set_size_inches(11, 10.625)
         fig.tight_layout(rect=[0, 0.03, 1, 0.95])       # leave some space for suptitle
         fig.savefig(plot_fname, bbox_inches='tight')        # FIXME should we add timestamp to filename and create a link to latest?
 
