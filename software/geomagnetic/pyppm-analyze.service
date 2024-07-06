@@ -1,0 +1,15 @@
+[Unit]
+Description=PyPPM data analysis
+Documentation=http://www.github.com/bkuschak/pyppm
+
+[Service]
+Type=simple
+WorkingDirectory=/home/brian/git/pyppm/software/geomagnetic/
+ExecStart=/home/brian/git/pyppm/software/geomagnetic/analyze.sh
+StandardOutput=null
+StandardError=null
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
