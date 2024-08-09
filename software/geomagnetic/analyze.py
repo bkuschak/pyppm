@@ -331,7 +331,8 @@ class ppm_analysis:
             self.save_wavfile(wavfilename)
 
         # Use FDM harmonic inversion to calculate a set of frequencies in this band.
-        self.signals = harminv.invert(self.a1f, fmin=self.expected_freq_low, fmax=self.expected_freq_high, dt=1.0/self.fs, nf=30)
+        #self.signals = harminv.invert(self.a1f, fmin=self.expected_freq_low, fmax=self.expected_freq_high, dt=1.0/self.fs, nf=30)
+        self.signals = harminv.invert(self.a1f, fmin=self.expected_freq_low, fmax=self.expected_freq_high, dt=1.0/self.fs, nf=25)
 
         # Next compute FFTs of background, measurement, and filtered measurement data.
         # We will use this to help select the correct signal from the list of FDM candidates.
@@ -588,12 +589,16 @@ class ppm_analysis:
         with open(self.log_fname, 'r') as f:
             for line in f:
                 # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
-                data = [float(i) for i in line.split()]
-                ts = data[0]
-                if ts >= t_earliest:
-                    # timestamp in a format suitable for plotting
-                    t_recent.append(mdates.date2num(dt.datetime.utcfromtimestamp(ts)))  # UTC time
-                    f_recent.append(data[1] - self.local_offset)        # offset corrected
+                # During power failures the file gets corrupted, so try/except.
+                try:
+                    data = [float(i) for i in line.split()]
+                    ts = data[0]
+                    if ts >= t_earliest:
+                        # timestamp in a format suitable for plotting
+                        t_recent.append(mdates.date2num(dt.datetime.utcfromtimestamp(ts)))  # UTC time
+                        f_recent.append(data[1] - self.local_offset)        # offset corrected
+                except Exception as e:
+                    print('Got exception reading log file line:\n', line, '\n', e)
 
         # Sort by time
         #sorted_idx = t_recent.argsort()
@@ -863,7 +868,8 @@ def main():
             #ppm.set_expected_range(50000, 52700)
             #ppm.set_expected_range(51100, 51700)
             #ppm.set_expected_range(50000, 52600)
-            ppm.set_expected_range(51960-1000, 51960+1000)
+            #ppm.set_expected_range(51960-1000, 51960+1000)
+            ppm.set_expected_range(51940-200, 51940+200)
 
             # FIXME - wasteful to load each time...
             if intermagnet_path:
