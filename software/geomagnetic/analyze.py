@@ -584,8 +584,9 @@ class ppm_analysis:
         f_recent = []
         #t_earliest = time.time() - (4*24*60*60)     # Limit to most recent 4 days
         #t_earliest = time.time() - (3*24*60*60)     # Limit to most recent 3 days
+        t_earliest = time.time() - (2*24*60*60)     # Limit to most recent 2 days
         #t_earliest = time.time() - (1*24*60*60)     # Limit to most recent 1 days
-        t_earliest = time.time() - (0.25*24*60*60)     # Limit to most recent 0.25 days
+        #t_earliest = time.time() - (0.25*24*60*60)     # Limit to most recent 0.25 days
         with open(self.log_fname, 'r') as f:
             for line in f:
                 # ts, frequency, amplitude, decay, Q, error, fom, wb_snr))
@@ -836,14 +837,18 @@ def main():
 
     # Read previously recorded and timestamped files
     counter = 0
-    for f in glob.glob(input_fname + '.*'):
+    file_list = glob.glob(input_fname + '.*')
+    #print('File list:', file_list)
+    for f in file_list:
 
         # Time-based file filtering
         if os.path.getctime(f) < earliest_filetime:
+            #print('Skipping old file', f)
             continue    # skip
 
         fname, fext = os.path.splitext(f);
         ts = int(fext[1:])
+        #print('Selected file', f)
 
         # Skip the input file if it already exists in the output file
         Skip = False
@@ -851,11 +856,14 @@ def main():
             for l in open(output_fname, 'r'):
                 if str(ts) in l:
                     Skip = True
+                    #print('Skipping file', l)
                     break
         except IOError:
+            #print('Ignoring IOError')
             pass
 
         if Skip == False:
+            #print('Analyzing file', f)
             ppm = ppm_analysis(output_fname, verbose)
             ppm.set_local_offset(local_offset)
             try:
@@ -869,7 +877,7 @@ def main():
             #ppm.set_expected_range(51100, 51700)
             #ppm.set_expected_range(50000, 52600)
             #ppm.set_expected_range(51960-1000, 51960+1000)
-            ppm.set_expected_range(51940-200, 51940+200)
+            ppm.set_expected_range(51940-400, 51940+200)
 
             # FIXME - wasteful to load each time...
             if intermagnet_path:
