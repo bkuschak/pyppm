@@ -4,7 +4,7 @@
 
 PNG=/var/www/html/ppm_plot.png
 #WAV=/var/www/html/audio.wav
-WEBSITE=webserver_host:~/pyppm/
+WEBSITE='webserver_host:~/pyppm/'
 
 #python analyze.py -t -30 -f /data/ppm_measurements.dat -v -w audio.wav 
 #python3 analyze.py -t -30 -f /data/ppm_measurements.dat -v -w audio.wav -p
@@ -24,6 +24,6 @@ WEBSITE=webserver_host:~/pyppm/
 
 while true; do
 	python analyze.py -t -43240 -f /data/ppm_measurements.dat -p ${PNG} --plot_decimation 30 -vv
-    scp $(PNG) $(WEBSITE)
+    /usr/bin/scp ${PNG} ${WEBSITE}
     sleep 10
 done
